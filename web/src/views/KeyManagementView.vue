@@ -483,15 +483,37 @@ function closeBatchAdd() {
   batchFailures.value = [];
 }
 
-function parseBatchKeys(input: string): string[] {
-  const out: string[] = [];
+function parseBatchKeys(input: string): { key: string; alias: string }[] {
+  const out: { key: string; alias: string }[] = [];
   const seen = new Set<string>();
   for (const raw of input.split(/\r?\n/)) {
-    const key = raw.trim();
-    if (!key) continue;
+    let line = raw.trim();
+    if (!line) continue;
+
+    let key = "";
+    let alias = "";
+
+    const separators = ["----"];
+    for (const sep of separators) {
+      if (line.includes(sep)) {
+        const parts = line.split(sep);
+        const lastPart = parts[parts.length - 1]?.trim();
+        if (lastPart && lastPart.startsWith("tvly-")) {
+          key = lastPart;
+          alias = parts[0]?.trim() || "";
+          break;
+        }
+      }
+    }
+
+    if (!key) {
+      key = line;
+    }
+
+    if (!key.startsWith("tvly-")) continue;
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push(key);
+    out.push({ key, alias });
   }
   return out;
 }
@@ -507,13 +529,13 @@ async function createBatchKeys() {
   batchFailures.value = [];
 
   let succeeded = 0;
-  for (const key of keys) {
+  for (const item of keys) {
     try {
-      await api.post("/api/keys", { key });
+      await api.post("/api/keys", { key: item.key, alias: item.alias || undefined });
       succeeded++;
     } catch (err: any) {
       batchFailures.value.push({
-        key,
+        key: item.key,
         error: err?.response?.data?.error ?? t("common.createFailed"),
       });
     }

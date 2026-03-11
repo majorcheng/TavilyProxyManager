@@ -306,15 +306,23 @@ func handleCreateKey(c *gin.Context, keys *services.KeyService) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_json"})
 		return
 	}
-	if strings.TrimSpace(body.Key) == "" {
+
+	key := strings.TrimSpace(body.Key)
+	if key == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_key"})
 		return
 	}
-	if strings.TrimSpace(body.Alias) == "" {
-		body.Alias = "Default"
+	if !strings.HasPrefix(key, "tvly-") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_key_format"})
+		return
 	}
 
-	created, err := keys.Create(c.Request.Context(), strings.TrimSpace(body.Key), strings.TrimSpace(body.Alias), body.TotalQuota)
+	alias := strings.TrimSpace(body.Alias)
+	if alias == "" {
+		alias = "Default"
+	}
+
+	created, err := keys.Create(c.Request.Context(), key, alias, body.TotalQuota)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "create_failed"})
 		return
