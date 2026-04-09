@@ -11,8 +11,8 @@
 - **透明代理**：完整转发至 `https://api.tavily.com`（支持所有路径与方法）。
 - **Master Key 鉴权**：客户端通过 `Authorization: Bearer <MasterKey>` 安全访问。
 - **智能 Key 池管理**：
-  - 优先使用剩余额度最高的 Key。
-  - 同额度 Key 随机打散，有效防止请求过于集中触发频率限制。
+  - 默认使用 **fill-first**：优先持续消费最近使用的 Key，适合个人自用和单 Key 观察。
+  - 可切换为 **余额优先（balance）**：优先使用剩余额度更高的 Key，同额度随机打散，降低集中触发频率限制的概率。
 - **自动故障切换**：遇到 `401` / `429` / `432` / `433` 等错误时，自动尝试 Key 池中的下一个可用 Key。
 - **MCP 支持**：内置 HTTP MCP (Model Context Protocol) 端点，可轻松接入 Claude、VS Code 等 AI 工具。
 - **可视化管理面板**：

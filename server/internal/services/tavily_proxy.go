@@ -150,7 +150,7 @@ func (p *TavilyProxy) Do(ctx context.Context, req ProxyRequest) (ProxyResponse, 
 		}
 	}
 
-	candidates, err := p.keys.Candidates(ctx)
+	candidates, err := p.keys.CandidatesByPolicy(ctx, p.keySelectionPolicy(ctx))
 	if err != nil {
 		return ProxyResponse{}, err
 	}
@@ -524,6 +524,20 @@ func (p *TavilyProxy) getCacheTTL(ctx context.Context) time.Duration {
 		return 43200 * time.Second
 	}
 	return time.Duration(seconds) * time.Second
+}
+
+func (p *TavilyProxy) keySelectionPolicy(ctx context.Context) string {
+	if p.settings == nil {
+		return DefaultKeySelectionPolicy()
+	}
+	value, ok, err := p.settings.Get(ctx, SettingKeySelectionPolicy)
+	if err != nil || !ok {
+		return DefaultKeySelectionPolicy()
+	}
+	if normalized := NormalizeKeySelectionPolicy(value); normalized != "" {
+		return normalized
+	}
+	return DefaultKeySelectionPolicy()
 }
 
 func (p *TavilyProxy) GetUsage(ctx context.Context, tavilyKey string) (int, *int, error) {

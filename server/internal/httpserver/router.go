@@ -71,6 +71,8 @@ func NewRouter(deps Dependencies) http.Handler {
 
 		api.GET("/settings/auto-sync", func(c *gin.Context) { handleGetAutoSync(c, deps.SettingsService) })
 		api.PUT("/settings/auto-sync", func(c *gin.Context) { handleSetAutoSync(c, deps.SettingsService) })
+		api.GET("/settings/key-selection", func(c *gin.Context) { handleGetKeySelection(c, deps.SettingsService) })
+		api.PUT("/settings/key-selection", func(c *gin.Context) { handleSetKeySelection(c, deps.SettingsService) })
 		api.GET("/settings/log-cleanup", func(c *gin.Context) { handleGetLogCleanup(c, deps.SettingsService) })
 		api.PUT("/settings/log-cleanup", func(c *gin.Context) { handleSetLogCleanup(c, deps.SettingsService) })
 
@@ -536,6 +538,43 @@ func handleSetAutoSync(c *gin.Context, settings *services.SettingsService) {
 		}
 	}
 
+	c.Status(http.StatusNoContent)
+}
+
+func handleGetKeySelection(c *gin.Context, settings *services.SettingsService) {
+	policy, ok, err := settings.Get(c.Request.Context(), services.SettingKeySelectionPolicy)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "db_error"})
+		return
+	}
+	normalized := services.DefaultKeySelectionPolicy()
+	if ok {
+		if value := services.NormalizeKeySelectionPolicy(policy); value != "" {
+			normalized = value
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"policy": normalized,
+	})
+}
+
+func handleSetKeySelection(c *gin.Context, settings *services.SettingsService) {
+	var body struct {
+		Policy string `json:"policy"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_json"})
+		return
+	}
+	policy := services.NormalizeKeySelectionPolicy(body.Policy)
+	if policy == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_policy"})
+		return
+	}
+	if err := settings.Set(c.Request.Context(), services.SettingKeySelectionPolicy, policy); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "db_error"})
+		return
+	}
 	c.Status(http.StatusNoContent)
 }
 

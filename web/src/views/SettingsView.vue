@@ -134,6 +134,37 @@
       </n-gi>
 
       <n-gi>
+        <n-card :title="t('settings.keySelection.title')" class="settings-card">
+          <template #header-extra>
+            <n-icon :component="ServerOutline" size="20" />
+          </template>
+          <n-space vertical size="large">
+            <n-alert type="info" :show-icon="true" size="small">
+              {{ t("settings.keySelection.description") }}
+            </n-alert>
+
+            <n-form :model="keySelection" label-placement="top" size="medium">
+              <n-form-item :label="t('settings.keySelection.policy')">
+                <n-select
+                  v-model:value="keySelection.policy"
+                  :options="keySelectionOptions"
+                />
+              </n-form-item>
+            </n-form>
+
+            <n-button
+              type="primary"
+              block
+              :loading="savingKeySelection"
+              @click="saveKeySelection"
+            >
+              {{ t("settings.keySelection.save") }}
+            </n-button>
+          </n-space>
+        </n-card>
+      </n-gi>
+
+      <n-gi>
         <n-card :title="t('settings.logCleanup.title')" class="settings-card">
           <template #header-extra>
             <n-icon :component="TrashOutline" size="20" />
@@ -267,7 +298,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import {
   NAlert,
   NButton,
@@ -281,6 +312,7 @@ import {
   NInputGroup,
   NInputNumber,
   NPopconfirm,
+  NSelect,
   NSpace,
   NSwitch,
   useMessage,
@@ -301,8 +333,15 @@ const message = useMessage();
 const appVersion = __APP_VERSION__;
 const masterKey = ref("");
 const savingAutoSync = ref(false);
+const savingKeySelection = ref(false);
 const savingLogCleanup = ref(false);
 const savingCache = ref(false);
+
+const keySelection = ref<{
+  policy: string;
+}>({
+  policy: "fill_first",
+});
 
 const cacheSettings = ref<{
   enabled: boolean;
@@ -349,6 +388,17 @@ const logCleanup = ref<{
   last_run_at: null,
   last_error: "",
 });
+
+const keySelectionOptions = computed(() => [
+  {
+    label: t("settings.keySelection.fillFirst"),
+    value: "fill_first",
+  },
+  {
+    label: t("settings.keySelection.balance"),
+    value: "balance",
+  },
+]);
 
 function formatDate(dateStr: string) {
   const date = new Date(dateStr);
@@ -402,6 +452,36 @@ async function loadAutoSync() {
     message.error(
       err?.response?.data?.error ?? t("settings.errors.loadAutoSync")
     );
+  }
+}
+
+async function loadKeySelection() {
+  try {
+    const { data } = await api.get<{
+      policy: string;
+    }>("/api/settings/key-selection");
+    keySelection.value = {
+      policy: data.policy || "fill_first",
+    };
+  } catch (err: any) {
+    message.error(
+      err?.response?.data?.error ?? t("settings.errors.loadKeySelection")
+    );
+  }
+}
+
+async function saveKeySelection() {
+  savingKeySelection.value = true;
+  try {
+    await api.put("/api/settings/key-selection", {
+      policy: keySelection.value.policy,
+    });
+    await loadKeySelection();
+    message.success(t("settings.messages.updated"));
+  } catch (err: any) {
+    message.error(err?.response?.data?.error ?? t("common.saveFailed"));
+  } finally {
+    savingKeySelection.value = false;
   }
 }
 
@@ -545,6 +625,7 @@ async function resetKey() {
 onMounted(async () => {
   await load();
   await loadAutoSync();
+  await loadKeySelection();
   await loadLogCleanup();
   await loadCache();
 });

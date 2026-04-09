@@ -10,6 +10,7 @@ const (
 	SettingAutoSyncLastError              = "auto_sync_last_error"
 
 	SettingRequestLoggingEnabled = "request_logging_enabled"
+	SettingKeySelectionPolicy    = "key_selection_policy"
 
 	SettingLogRetentionDays    = "log_retention_days"
 	SettingLogCleanupLastRunAt = "log_cleanup_last_run_at"

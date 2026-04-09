@@ -11,8 +11,8 @@ A transparent reverse proxy for the Tavily API that aggregates multiple Tavily A
 - **Transparent Proxy**: Seamlessly forwards requests to `https://api.tavily.com` (supports all endpoints/methods).
 - **Master Key Authentication**: Secure access via `Authorization: Bearer <MasterKey>`.
 - **Intelligent Key Pooling**:
-  - Prioritizes keys with the highest remaining quota.
-  - Randomly distributes requests among keys with equal quota to prevent rate limiting.
+  - Uses **fill-first** by default: keeps draining the most recently used key, which fits personal/self-hosted usage.
+  - Can switch to **balance** mode: prioritizes keys with more remaining quota and randomizes ties to reduce concentrated rate limiting.
 - **Automatic Failover**: Automatically retries with the next available key upon receiving `401`, `429`, `432`, or `433` errors.
 - **MCP Support**: Built-in HTTP MCP (Model Context Protocol) endpoint for easy integration with AI tools (e.g., Claude, VS Code).
 - **Comprehensive Dashboard**:

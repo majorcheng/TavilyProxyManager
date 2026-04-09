@@ -143,6 +143,10 @@ func (s *KeyService) SetUsage(ctx context.Context, id uint, used int, total *int
 }
 
 func (s *KeyService) Candidates(ctx context.Context) ([]models.APIKey, error) {
+	return s.CandidatesByPolicy(ctx, DefaultKeySelectionPolicy())
+}
+
+func (s *KeyService) CandidatesByPolicy(ctx context.Context, policy string) ([]models.APIKey, error) {
 	var keys []models.APIKey
 	if err := s.db.WithContext(ctx).
 		Where("is_active = ? AND is_invalid = ? AND used_quota < total_quota", true, false).
@@ -153,6 +157,41 @@ func (s *KeyService) Candidates(ctx context.Context) ([]models.APIKey, error) {
 		return nil, nil
 	}
 
+	switch NormalizeKeySelectionPolicy(policy) {
+	case KeySelectionPolicyBalance:
+		return balanceCandidates(keys), nil
+	case "", KeySelectionPolicyFillFirst:
+		return fillFirstCandidates(keys), nil
+	default:
+		return fillFirstCandidates(keys), nil
+	}
+}
+
+// fill-first 更适合个人自用场景：优先持续消费同一把 key，
+// 这样更容易观察单 key 状态，也避免多把 key 同时被扣额。
+func fillFirstCandidates(keys []models.APIKey) []models.APIKey {
+	out := append([]models.APIKey(nil), keys...)
+	sort.SliceStable(out, func(i, j int) bool {
+		left := out[i]
+		right := out[j]
+
+		switch {
+		case left.LastUsedAt != nil && right.LastUsedAt == nil:
+			return true
+		case left.LastUsedAt == nil && right.LastUsedAt != nil:
+			return false
+		case left.LastUsedAt != nil && right.LastUsedAt != nil && !left.LastUsedAt.Equal(*right.LastUsedAt):
+			return left.LastUsedAt.After(*right.LastUsedAt)
+		case left.ID != right.ID:
+			return left.ID < right.ID
+		default:
+			return left.CreatedAt.Before(right.CreatedAt)
+		}
+	})
+	return out
+}
+
+func balanceCandidates(keys []models.APIKey) []models.APIKey {
 	type scored struct {
 		key       models.APIKey
 		remaining int
@@ -181,7 +220,7 @@ func (s *KeyService) Candidates(ctx context.Context) ([]models.APIKey, error) {
 		}
 		i = j
 	}
-	return out, nil
+	return out
 }
 
 func (s *KeyService) FindByID(ctx context.Context, id uint) (*models.APIKey, error) {
