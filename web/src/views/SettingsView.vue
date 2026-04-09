@@ -165,6 +165,46 @@
       </n-gi>
 
       <n-gi>
+        <n-card :title="t('settings.upstreamProxy.title')" class="settings-card">
+          <template #header-extra>
+            <n-icon :component="GitNetworkOutline" size="20" />
+          </template>
+          <n-space vertical size="large">
+            <n-alert type="info" :show-icon="true" size="small">
+              {{ t("settings.upstreamProxy.description") }}
+            </n-alert>
+
+            <n-form :model="upstreamProxy" label-placement="top" size="medium">
+              <n-form-item :label="t('settings.upstreamProxy.enabled')">
+                <n-space align="center">
+                  <n-switch v-model:value="upstreamProxy.enabled" />
+                  <span>{{
+                    upstreamProxy.enabled ? t("common.enabled") : t("common.disabled")
+                  }}</span>
+                </n-space>
+              </n-form-item>
+              <n-form-item :label="t('settings.upstreamProxy.proxyUrl')">
+                <n-input
+                  v-model:value="upstreamProxy.proxy_url"
+                  clearable
+                  :placeholder="t('settings.upstreamProxy.placeholder')"
+                />
+              </n-form-item>
+            </n-form>
+
+            <n-button
+              type="primary"
+              block
+              :loading="savingUpstreamProxy"
+              @click="saveUpstreamProxy"
+            >
+              {{ t("settings.upstreamProxy.save") }}
+            </n-button>
+          </n-space>
+        </n-card>
+      </n-gi>
+
+      <n-gi>
         <n-card :title="t('settings.logCleanup.title')" class="settings-card">
           <template #header-extra>
             <n-icon :component="TrashOutline" size="20" />
@@ -319,6 +359,7 @@ import {
 } from "naive-ui";
 import {
   CopyOutline,
+  GitNetworkOutline,
   LockClosedOutline,
   RefreshOutline,
   ServerOutline,
@@ -334,6 +375,7 @@ const appVersion = __APP_VERSION__;
 const masterKey = ref("");
 const savingAutoSync = ref(false);
 const savingKeySelection = ref(false);
+const savingUpstreamProxy = ref(false);
 const savingLogCleanup = ref(false);
 const savingCache = ref(false);
 
@@ -349,6 +391,14 @@ const cacheSettings = ref<{
 }>({
   enabled: false,
   ttl_seconds: 43200,
+});
+
+const upstreamProxy = ref<{
+  enabled: boolean;
+  proxy_url: string;
+}>({
+  enabled: false,
+  proxy_url: "",
 });
 
 const cacheStatsData = ref<{
@@ -470,6 +520,28 @@ async function loadKeySelection() {
   }
 }
 
+function normalizeUpstreamProxyURL(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value.trim();
+}
+
+async function loadUpstreamProxy() {
+  try {
+    const { data } = await api.get<{
+      enabled: boolean;
+      proxy_url: string;
+    }>("/api/settings/upstream-proxy");
+    upstreamProxy.value = {
+      enabled: data.enabled ?? false,
+      proxy_url: normalizeUpstreamProxyURL(data.proxy_url),
+    };
+  } catch (err: any) {
+    message.error(
+      err?.response?.data?.error ?? t("settings.errors.loadUpstreamProxy")
+    );
+  }
+}
+
 async function saveKeySelection() {
   savingKeySelection.value = true;
   try {
@@ -506,6 +578,22 @@ async function saveAutoSync() {
     message.error(err?.response?.data?.error ?? t("common.saveFailed"));
   } finally {
     savingAutoSync.value = false;
+  }
+}
+
+async function saveUpstreamProxy() {
+  savingUpstreamProxy.value = true;
+  try {
+    await api.put("/api/settings/upstream-proxy", {
+      enabled: upstreamProxy.value.enabled,
+      proxy_url: normalizeUpstreamProxyURL(upstreamProxy.value.proxy_url),
+    });
+    await loadUpstreamProxy();
+    message.success(t("settings.messages.updated"));
+  } catch (err: any) {
+    message.error(err?.response?.data?.error ?? t("common.saveFailed"));
+  } finally {
+    savingUpstreamProxy.value = false;
   }
 }
 
@@ -626,6 +714,7 @@ onMounted(async () => {
   await load();
   await loadAutoSync();
   await loadKeySelection();
+  await loadUpstreamProxy();
   await loadLogCleanup();
   await loadCache();
 });

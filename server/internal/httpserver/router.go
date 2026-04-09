@@ -73,6 +73,8 @@ func NewRouter(deps Dependencies) http.Handler {
 		api.PUT("/settings/auto-sync", func(c *gin.Context) { handleSetAutoSync(c, deps.SettingsService) })
 		api.GET("/settings/key-selection", func(c *gin.Context) { handleGetKeySelection(c, deps.SettingsService) })
 		api.PUT("/settings/key-selection", func(c *gin.Context) { handleSetKeySelection(c, deps.SettingsService) })
+		api.GET("/settings/upstream-proxy", func(c *gin.Context) { handleGetUpstreamProxy(c, deps.SettingsService) })
+		api.PUT("/settings/upstream-proxy", func(c *gin.Context) { handleSetUpstreamProxy(c, deps.SettingsService) })
 		api.GET("/settings/log-cleanup", func(c *gin.Context) { handleGetLogCleanup(c, deps.SettingsService) })
 		api.PUT("/settings/log-cleanup", func(c *gin.Context) { handleSetLogCleanup(c, deps.SettingsService) })
 
@@ -575,6 +577,87 @@ func handleSetKeySelection(c *gin.Context, settings *services.SettingsService) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "db_error"})
 		return
 	}
+	c.Status(http.StatusNoContent)
+}
+
+func handleGetUpstreamProxy(c *gin.Context, settings *services.SettingsService) {
+	enabled, err := settings.GetBool(c.Request.Context(), services.SettingUpstreamProxyEnabled, false)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "db_error"})
+		return
+	}
+	proxyURL, _, err := settings.Get(c.Request.Context(), services.SettingUpstreamProxyURL)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "db_error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"enabled":   enabled,
+		"proxy_url": strings.TrimSpace(proxyURL),
+	})
+}
+
+func handleSetUpstreamProxy(c *gin.Context, settings *services.SettingsService) {
+	var body struct {
+		Enabled  *bool   `json:"enabled"`
+		ProxyURL *string `json:"proxy_url"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_json"})
+		return
+	}
+	if body.Enabled == nil && body.ProxyURL == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_fields"})
+		return
+	}
+
+	var normalizedProxyURL *string
+	if body.ProxyURL != nil {
+		value, err := services.NormalizeUpstreamProxyURL(*body.ProxyURL)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_proxy_url"})
+			return
+		}
+		normalizedProxyURL = &value
+	}
+
+	finalEnabled, err := settings.GetBool(c.Request.Context(), services.SettingUpstreamProxyEnabled, false)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "db_error"})
+		return
+	}
+	if body.Enabled != nil {
+		finalEnabled = *body.Enabled
+	}
+
+	finalProxyURL, _, err := settings.Get(c.Request.Context(), services.SettingUpstreamProxyURL)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "db_error"})
+		return
+	}
+	if normalizedProxyURL != nil {
+		finalProxyURL = *normalizedProxyURL
+	}
+	if finalEnabled && strings.TrimSpace(finalProxyURL) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing_proxy_url"})
+		return
+	}
+
+	// 统一先校验再落库，避免把非法 URL 保存后把所有上游请求一起打挂。
+	if normalizedProxyURL != nil {
+		if err := settings.Set(c.Request.Context(), services.SettingUpstreamProxyURL, *normalizedProxyURL); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "db_error"})
+			return
+		}
+	}
+	if body.Enabled != nil {
+		if err := settings.SetBool(c.Request.Context(), services.SettingUpstreamProxyEnabled, *body.Enabled); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "db_error"})
+			return
+		}
+	}
+
 	c.Status(http.StatusNoContent)
 }
 

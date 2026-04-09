@@ -11,6 +11,8 @@ const (
 
 	SettingRequestLoggingEnabled = "request_logging_enabled"
 	SettingKeySelectionPolicy    = "key_selection_policy"
+	SettingUpstreamProxyEnabled  = "upstream_proxy_enabled"
+	SettingUpstreamProxyURL      = "upstream_proxy_url"
 
 	SettingLogRetentionDays    = "log_retention_days"
 	SettingLogCleanupLastRunAt = "log_cleanup_last_run_at"

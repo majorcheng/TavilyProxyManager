@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -20,7 +21,11 @@ import (
 
 type TavilyProxy struct {
 	baseURL string
-	client  *http.Client
+	timeout time.Duration
+
+	clientMu       sync.RWMutex
+	clientCacheKey string
+	client         *http.Client
 
 	settings *SettingsService
 	cache    *CacheService
@@ -49,11 +54,14 @@ type ProxyResponse struct {
 }
 
 func NewTavilyProxy(baseURL string, timeout time.Duration, keys *KeyService, logs *LogService, stats *StatsService, logger *slog.Logger) *TavilyProxy {
+	client, err := BuildUpstreamHTTPClient(timeout, UpstreamProxyConfig{})
+	if err != nil {
+		client = &http.Client{Timeout: timeout}
+	}
 	return &TavilyProxy{
-		baseURL: strings.TrimRight(baseURL, "/"),
-		client: &http.Client{
-			Timeout: timeout,
-		},
+		baseURL:  strings.TrimRight(baseURL, "/"),
+		timeout:  timeout,
+		client:   client,
 		keys:     keys,
 		logs:     logs,
 		stats:    stats,
@@ -386,6 +394,45 @@ func truncateForLog(data []byte, maxBytes int) (string, bool) {
 	return string(data[:maxBytes]), true
 }
 
+func (p *TavilyProxy) httpClient(ctx context.Context) (*http.Client, error) {
+	if p.settings == nil {
+		return p.client, nil
+	}
+
+	cfg, err := LoadUpstreamProxyConfig(ctx, p.settings)
+	if err != nil {
+		return nil, err
+	}
+	cacheKey := cfg.CacheKey()
+
+	p.clientMu.RLock()
+	if p.client != nil && p.clientCacheKey == cacheKey {
+		client := p.client
+		p.clientMu.RUnlock()
+		return client, nil
+	}
+	p.clientMu.RUnlock()
+
+	// 后台支持运行时切换代理，这里按配置快照缓存 client，
+	// 避免每个请求都新建 transport，同时保证保存设置后立即生效。
+	client, err := BuildUpstreamHTTPClient(p.timeout, cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	p.clientMu.Lock()
+	defer p.clientMu.Unlock()
+	if p.client != nil && p.clientCacheKey == cacheKey {
+		return p.client, nil
+	}
+	if currentTransport, ok := p.client.Transport.(*http.Transport); ok {
+		currentTransport.CloseIdleConnections()
+	}
+	p.client = client
+	p.clientCacheKey = cacheKey
+	return p.client, nil
+}
+
 func (p *TavilyProxy) tryKey(ctx context.Context, keyID uint, tavilyKey string, req ProxyRequest, proxyReqID string) (ProxyResponse, int, int64, string, error) {
 	targetURL := p.baseURL + req.Path
 	if req.RawQuery != "" {
@@ -413,7 +460,11 @@ func (p *TavilyProxy) tryKey(ctx context.Context, keyID uint, tavilyKey string, 
 	)
 
 	start := time.Now()
-	upstreamResp, err := p.client.Do(upstreamReq)
+	client, err := p.httpClient(ctx)
+	if err != nil {
+		return ProxyResponse{}, 0, 0, "", err
+	}
+	upstreamResp, err := client.Do(upstreamReq)
 	latencyMs := time.Since(start).Milliseconds()
 	if err != nil {
 		p.logger.Warn("upstream call error",
@@ -547,7 +598,11 @@ func (p *TavilyProxy) GetUsage(ctx context.Context, tavilyKey string) (int, *int
 	}
 	req.Header.Set("Authorization", "Bearer "+tavilyKey)
 
-	resp, err := p.client.Do(req)
+	client, err := p.httpClient(ctx)
+	if err != nil {
+		return 0, nil, err
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		p.logger.Warn("upstream usage request failed", "err", err)
 		return 0, nil, err
